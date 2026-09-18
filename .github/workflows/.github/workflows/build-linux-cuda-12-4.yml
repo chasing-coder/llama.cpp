@@ -1,0 +1,60 @@
+name: build-linux-cuda-12-4
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build git curl libcurl4-openssl-dev libssl-dev
+
+      - name: Add NVIDIA CUDA repo
+        run: |
+          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+          sudo dpkg -i cuda-keyring_1.1-1_all.deb
+          sudo apt-get update
+
+      - name: Install minimal CUDA 12.4 toolchain
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            cuda-nvcc-12-4 \
+            cuda-cudart-dev-12-4 \
+            libcublas-12-4 \
+            libcublas-dev-12-4 \
+            cuda-driver-dev-12-4
+
+      - name: Configure
+        run: |
+          cmake -B build -G Ninja \
+            -DGGML_CUDA=ON \
+            -DGGML_NATIVE=OFF \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCUDAToolkit_ROOT=/usr/local/cuda-12.4 \
+            -DCMAKE_CUDA_ARCHITECTURES=86 \
+            -DCMAKE_INSTALL_RPATH='$ORIGIN' \
+            -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON
+
+      - name: Build
+        run: |
+          cmake --build build -j"$(nproc)"
+
+      - name: Pack
+        run: |
+          mkdir -p dist/llama-linux-cuda-12.4-sm86
+          cp -a build/bin/* dist/llama-linux-cuda-12.4-sm86/
+          cp LICENSE dist/llama-linux-cuda-12.4-sm86/ || true
+          tar -czf llama-linux-cuda-12.4-sm86.tar.gz -C dist llama-linux-cuda-12.4-sm86
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-linux-cuda-12.4-sm86
+          path: llama-linux-cuda-12.4-sm86.tar.gz
