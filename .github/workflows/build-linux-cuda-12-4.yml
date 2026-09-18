@@ -31,18 +31,33 @@ jobs:
             libcublas-dev-12-4 \
             cuda-driver-dev-12-4
 
+      - name: Check CUDA toolchain
+        run: |
+          ls -l /usr/local/cuda-12.4/bin/nvcc
+          /usr/local/cuda-12.4/bin/nvcc --version
+          ls -l /usr/local/cuda-12.4/lib64/libcudart.so* || true
+          ls -l /usr/local/cuda-12.4/lib64/libcublas.so* || true
+
       - name: Configure
+        env:
+          PATH: /usr/local/cuda-12.4/bin:${{ env.PATH }}
+          LD_LIBRARY_PATH: /usr/local/cuda-12.4/lib64:${{ env.LD_LIBRARY_PATH }}
+          CUDACXX: /usr/local/cuda-12.4/bin/nvcc
         run: |
           cmake -B build -G Ninja \
             -DGGML_CUDA=ON \
             -DGGML_NATIVE=OFF \
             -DCMAKE_BUILD_TYPE=Release \
             -DCUDAToolkit_ROOT=/usr/local/cuda-12.4 \
+            -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.4/bin/nvcc \
             -DCMAKE_CUDA_ARCHITECTURES=86 \
             -DCMAKE_INSTALL_RPATH='$ORIGIN' \
             -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON
 
       - name: Build
+        env:
+          PATH: /usr/local/cuda-12.4/bin:${{ env.PATH }}
+          LD_LIBRARY_PATH: /usr/local/cuda-12.4/lib64:${{ env.LD_LIBRARY_PATH }}
         run: |
           cmake --build build -j"$(nproc)"
 
