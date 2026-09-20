@@ -29,13 +29,14 @@ jobs:
       - name: Prepare Python 3.13
         run: |
           $HOME/.local/bin/uv python install 3.13
-          $HOME/.local/bin/uv venv --python 3.13 /opt/venv
+          $HOME/.local/bin/uv venv --python 3.13 --seed /opt/venv
+          /opt/venv/bin/python -m pip --version
           echo "/opt/venv/bin" >> "$GITHUB_PATH"
 
       - name: Install PyTorch cu126
         run: |
           /opt/venv/bin/python -m pip install -U pip setuptools wheel ninja packaging
-          /opt/venv/bin/pip install \
+          /opt/venv/bin/python -m pip install \
             torch==2.10.0+cu126 \
             torchvision==0.25.0+cu126 \
             torchaudio==2.10.0+cu126 \
@@ -64,7 +65,7 @@ jobs:
 
           rm -rf build dist *.egg-info
 
-          /opt/venv/bin/pip wheel . \
+          /opt/venv/bin/python -m pip wheel . \
             --no-build-isolation \
             -w dist
 
