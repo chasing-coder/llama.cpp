@@ -1,0 +1,78 @@
+name: Build SageAttention cp313 cu126 sm86
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    container:
+      image: nvidia/cuda:12.6.3-devel-ubuntu22.04
+
+    steps:
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            git \
+            curl \
+            ca-certificates \
+            build-essential \
+            ninja-build
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Prepare Python 3.13
+        run: |
+          $HOME/.local/bin/uv python install 3.13
+          $HOME/.local/bin/uv venv --python 3.13 /opt/venv
+          echo "/opt/venv/bin" >> "$GITHUB_PATH"
+
+      - name: Install PyTorch cu126
+        run: |
+          /opt/venv/bin/python -m pip install -U pip setuptools wheel ninja packaging
+          /opt/venv/bin/pip install \
+            torch==2.10.0+cu126 \
+            torchvision==0.25.0+cu126 \
+            torchaudio==2.10.0+cu126 \
+            --extra-index-url https://download.pytorch.org/whl/cu126
+
+      - name: Clone SageAttention
+        run: |
+          git clone --depth 1 https://github.com/thu-ml/SageAttention.git /workspace/SageAttention
+
+      - name: Build wheel for RTX 3060 (sm86)
+        working-directory: /workspace/SageAttention
+        env:
+          CUDA_HOME: /usr/local/cuda
+          TORCH_CUDA_ARCH_LIST: "8.6"
+          EXT_PARALLEL: "2"
+          MAX_JOBS: "2"
+        run: |
+          /opt/venv/bin/python - <<'PY'
+          import torch
+          print("torch:", torch.__version__)
+          print("torch CUDA:", torch.version.cuda)
+          PY
+
+          nvcc --version
+          test -f /usr/local/cuda/include/cusparse.h
+
+          rm -rf build dist *.egg-info
+
+          /opt/venv/bin/pip wheel . \
+            --no-build-isolation \
+            -w dist
+
+          ls -lh dist/
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: sageattention-cp313-cu126-sm86
+          path: /workspace/SageAttention/dist/*.whl
+          if-no-files-found: error
