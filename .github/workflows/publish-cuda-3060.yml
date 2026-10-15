@@ -1,0 +1,86 @@
+name: Publish RTX 3060 CUDA build to Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - .github/workflows/publish-cuda-3060.yml
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-cuda-3060
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: 9fc315876aa0453662ab08c19c03d519f9431c1d
+      SOURCE_RUN: "38666907440"
+      SOURCE_ARTIFACT: llama-cuda124-sm86
+      RELEASE_TAG: cuda124-sm86-9fc3158
+
+    steps:
+      - name: Download existing successful build artifact
+        run: |
+          set -eu
+          mkdir -p release
+          gh run download "$SOURCE_RUN" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$SOURCE_ARTIFACT" \
+            --dir release
+          test -s release/llama-cuda124-sm86.tar.gz
+          tar -tzf release/llama-cuda124-sm86.tar.gz >/dev/null
+          sha256sum release/llama-cuda124-sm86.tar.gz \
+            > release/llama-cuda124-sm86.tar.gz.sha256
+          cd release
+          sha256sum -c llama-cuda124-sm86.tar.gz.sha256
+
+      - name: Create pre-release and upload assets
+        run: |
+          set -eu
+          cat > release-notes.md <<'EOF'
+          RTX 3060 (sm_86) focused Linux x86_64 CUDA 12.4.1 build of llama.cpp.
+
+          - Source commit: `9fc315876aa0453662ab08c19c03d519f9431c1d`
+          - Original successful Actions run: [38666907440](https://github.com/chasing-coder/llama.cpp/actions/runs/38666907440)
+          - Toolchain: CUDA Toolkit 12.4.1, Ubuntu 22.04, CCCL v3.4.3
+          - Includes `llama-cli`, `llama-server`, shared libraries and CUDA runtime libraries.
+          - NVIDIA driver is required on the target machine; CUDA driver stubs are **not** shipped.
+          - Compiled successfully in CI; GPU runtime compatibility has **not** been tested on the target PC.
+
+          Download `llama-cuda124-sm86.tar.gz`, unpack, and run `./run-cli.sh --list-devices`.
+          See `README.txt` in the archive for additional commands.
+          EOF
+
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$SOURCE_SHA" \
+              --title "RTX 3060 CUDA 12.4 / llama.cpp 9fc3158" \
+              --notes-file release-notes.md \
+              --prerelease
+          fi
+
+          for attempt in 1 2 3; do
+            if gh release upload "$RELEASE_TAG" \
+              release/llama-cuda124-sm86.tar.gz \
+              release/llama-cuda124-sm86.tar.gz.sha256 \
+              --repo "$GITHUB_REPOSITORY" --clobber; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Release asset upload failed after three attempts" >&2
+              exit 1
+            fi
+            sleep 10
+          done
+
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json url,assets
