@@ -37,10 +37,12 @@ jobs:
             --dir release
           test -s release/llama-cuda124-sm86.tar.gz
           tar -tzf release/llama-cuda124-sm86.tar.gz >/dev/null
-          sha256sum release/llama-cuda124-sm86.tar.gz \
-            > release/llama-cuda124-sm86.tar.gz.sha256
-          cd release
-          sha256sum -c llama-cuda124-sm86.tar.gz.sha256
+          # Store a portable filename in the checksum; no 'release/' prefix.
+          (
+            cd release
+            sha256sum llama-cuda124-sm86.tar.gz > llama-cuda124-sm86.tar.gz.sha256
+            sha256sum -c llama-cuda124-sm86.tar.gz.sha256
+          )
 
       - name: Create pre-release and upload assets
         run: |
