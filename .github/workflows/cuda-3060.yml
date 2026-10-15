@@ -37,12 +37,25 @@ jobs:
 
       - name: Build llama-cli and llama-server
         run: |
+          set -eu
           nvcc --version
+
+          # No NVIDIA kernel driver is installed on GitHub-hosted runners.
+          # Use CUDA's link-only driver stub to resolve libcuda.so.1 when
+          # linking executables against libggml-cuda.so.
+          # The stub MUST NOT be packaged or used on the user's machine.
+          stub_dir=/usr/local/cuda/targets/x86_64-linux/lib/stubs
+          test -f "$stub_dir/libcuda.so"
+          if [ ! -e "$stub_dir/libcuda.so.1" ]; then
+            ln -s libcuda.so "$stub_dir/libcuda.so.1"
+          fi
+
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DGGML_CUDA=ON \
             -DGGML_NATIVE=OFF \
             -DCMAKE_CUDA_ARCHITECTURES=86-real \
+            "-DCMAKE_EXE_LINKER_FLAGS=-Wl,-rpath-link,$stub_dir" \
             -DGGML_CUDA_CCCL_VERSION=v3.4.3 \
             -DLLAMA_BUILD_TESTS=OFF \
             -DLLAMA_BUILD_UI=OFF
