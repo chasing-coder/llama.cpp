@@ -1,11 +1,13 @@
 name: Publish RTX 3060 CUDA build to Release
 
 on:
-  workflow_dispatch:
-  push:
-    branches: [master]
-    paths:
-      - .github/workflows/publish-cuda-3060.yml
+  workflow_run:
+    workflows:
+      - Build llama.cpp CUDA 12.4 (RTX 3060)
+    types:
+      - completed
+    branches:
+      - master
 
 permissions:
   contents: write
@@ -17,17 +19,17 @@ concurrency:
 
 jobs:
   publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository }}
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     env:
       GH_TOKEN: ${{ github.token }}
-      SOURCE_SHA: 9fc315876aa0453662ab08c19c03d519f9431c1d
-      SOURCE_RUN: "38666907440"
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+      SOURCE_RUN: ${{ github.event.workflow_run.id }}
       SOURCE_ARTIFACT: llama-cuda124-sm86
-      RELEASE_TAG: cuda124-sm86-9fc3158
 
     steps:
-      - name: Download existing successful build artifact
+      - name: Download successful build artifact
         run: |
           set -eu
           mkdir -p release
@@ -37,7 +39,7 @@ jobs:
             --dir release
           test -s release/llama-cuda124-sm86.tar.gz
           tar -tzf release/llama-cuda124-sm86.tar.gz >/dev/null
-          # Store a portable filename in the checksum; no 'release/' prefix.
+
           (
             cd release
             sha256sum llama-cuda124-sm86.tar.gz > llama-cuda124-sm86.tar.gz.sha256
@@ -47,31 +49,35 @@ jobs:
       - name: Create pre-release and upload assets
         run: |
           set -eu
-          cat > release-notes.md <<'EOF'
-          RTX 3060 (sm_86) focused Linux x86_64 CUDA 12.4.1 build of llama.cpp.
+          short_sha="$(printf '%s' "$SOURCE_SHA" | cut -c1-7)"
+          release_tag="cuda124-sm86-$short_sha"
 
-          - Source commit: `9fc315876aa0453662ab08c19c03d519f9431c1d`
-          - Original successful Actions run: [38666907440](https://github.com/chasing-coder/llama.cpp/actions/runs/38666907440)
-          - Toolchain: CUDA Toolkit 12.4.1, Ubuntu 22.04, CCCL v3.4.3
-          - Includes `llama-cli`, `llama-server`, shared libraries and CUDA runtime libraries.
-          - NVIDIA driver is required on the target machine; CUDA driver stubs are **not** shipped.
-          - Compiled successfully in CI; GPU runtime compatibility has **not** been tested on the target PC.
+          cat > release-notes.md <<EOF
+          RTX 3060 (sm_86) Linux x86_64 build of llama.cpp with CUDA Toolkit 12.4.1.
 
-          Download `llama-cuda124-sm86.tar.gz`, unpack, and run `./run-cli.sh --list-devices`.
-          See `README.txt` in the archive for additional commands.
+          Source commit: $SOURCE_SHA
+          Successful Actions run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN
+
+          - CUDA 12.4.1, Ubuntu 22.04, CCCL v3.4.3.
+          - Single-GPU build, NCCL disabled to remove the libnccl.so.2 dependency.
+          - Contains llama-cli, llama-server and required bundled CUDA runtime libraries.
+          - The NVIDIA driver is required on the target PC; CUDA driver stubs are not shipped.
+          - CI compilation and packaging were successful. Runtime inference on RTX 3060 is unverified.
+
+          Extract the tar.gz and run ./run-cli.sh --list-devices.
           EOF
 
-          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" \
+          if ! gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$release_tag" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$SOURCE_SHA" \
-              --title "RTX 3060 CUDA 12.4 / llama.cpp 9fc3158" \
+              --title "RTX 3060 CUDA 12.4 / llama.cpp $short_sha" \
               --notes-file release-notes.md \
               --prerelease
           fi
 
           for attempt in 1 2 3; do
-            if gh release upload "$RELEASE_TAG" \
+            if gh release upload "$release_tag" \
               release/llama-cuda124-sm86.tar.gz \
               release/llama-cuda124-sm86.tar.gz.sha256 \
               --repo "$GITHUB_REPOSITORY" --clobber; then
@@ -84,5 +90,5 @@ jobs:
             sleep 10
           done
 
-          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+          gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" \
             --json url,assets
